@@ -5,17 +5,17 @@ using System.Linq;
 using UnityEngine;
 
 /// <summary>
-/// Controlla periodicamente la cartella PhoneUploadServer/Uploads e mostra
-/// l'ultima fotografia ricevuta in uno SpriteRenderer.
+/// Controlla periodicamente la cartella PhoneUploadServer/Processed e mostra
+/// l'ultimo pesce ritagliato in uno SpriteRenderer.
 /// </summary>
 public sealed class PhoneDrawingReceiver : MonoBehaviour
 {
     [Header("Riferimenti")]
     [SerializeField] private SpriteRenderer targetRenderer;
 
-    [Header("Cartella delle fotografie")]
+    [Header("Cartella dei pesci elaborati")]
     [Tooltip("Percorso relativo alla cartella principale del progetto Unity. Puoi anche inserire un percorso assoluto.")]
-    [SerializeField] private string uploadsFolder = "PhoneUploadServer/Uploads";
+    [SerializeField] private string processedFolder = "PhoneUploadServer/Processed";
 
     [Header("Impostazioni")]
     [Min(0.2f)]
@@ -26,27 +26,21 @@ public sealed class PhoneDrawingReceiver : MonoBehaviour
 
     [SerializeField] private bool loadLatestImageOnStart = true;
 
-    private string resolvedUploadsFolder;
+    private string resolvedProcessedFolder;
     private string lastLoadedFile;
+    private DateTime lastLoadedWriteTimeUtc;
     private Sprite runtimeSprite;
     private Texture2D runtimeTexture;
     private Coroutine monitorCoroutine;
 
-    private static readonly string[] SupportedExtensions =
-    {
-        ".jpg",
-        ".jpeg",
-        ".png"
-    };
-
     private void Awake()
     {
-        ResolveUploadsFolder();
+        ResolveProcessedFolder();
     }
 
     private void OnEnable()
     {
-        monitorCoroutine = StartCoroutine(MonitorUploadsFolder());
+        monitorCoroutine = StartCoroutine(MonitorProcessedFolder());
     }
 
     private void OnDisable()
@@ -63,27 +57,28 @@ public sealed class PhoneDrawingReceiver : MonoBehaviour
         DestroyRuntimeAssets();
     }
 
-    [ContextMenu("Risolvi e mostra percorso Uploads")]
-    private void ResolveUploadsFolder()
+    [ContextMenu("Risolvi e mostra percorso Processed")]
+    private void ResolveProcessedFolder()
     {
-        if (Path.IsPathRooted(uploadsFolder))
+        if (Path.IsPathRooted(processedFolder))
         {
-            resolvedUploadsFolder = Path.GetFullPath(uploadsFolder);
+            resolvedProcessedFolder = Path.GetFullPath(processedFolder);
         }
         else
         {
             string projectRoot = Path.GetFullPath(Path.Combine(Application.dataPath, ".."));
-            resolvedUploadsFolder = Path.GetFullPath(Path.Combine(projectRoot, uploadsFolder));
+            resolvedProcessedFolder = Path.GetFullPath(Path.Combine(projectRoot, processedFolder));
         }
 
-        Debug.Log($"[PhoneDrawingReceiver] Cartella controllata: {resolvedUploadsFolder}", this);
+        Debug.Log($"[PhoneDrawingReceiver] Cartella controllata: {resolvedProcessedFolder}", this);
     }
 
-    private IEnumerator MonitorUploadsFolder()
+    private IEnumerator MonitorProcessedFolder()
     {
         if (!loadLatestImageOnStart)
         {
             lastLoadedFile = FindLatestImage();
+            lastLoadedWriteTimeUtc = GetLastWriteTimeUtc(lastLoadedFile);
         }
 
         WaitForSecondsRealtime wait = new WaitForSecondsRealtime(checkInterval);
@@ -91,12 +86,18 @@ public sealed class PhoneDrawingReceiver : MonoBehaviour
         while (enabled)
         {
             string latestFile = FindLatestImage();
+            DateTime latestWriteTimeUtc = GetLastWriteTimeUtc(latestFile);
 
-            if (!string.IsNullOrEmpty(latestFile) && latestFile != lastLoadedFile)
+            bool imageChanged = !string.IsNullOrEmpty(latestFile) &&
+                                (latestFile != lastLoadedFile ||
+                                 latestWriteTimeUtc != lastLoadedWriteTimeUtc);
+
+            if (imageChanged)
             {
                 if (TryLoadImage(latestFile))
                 {
                     lastLoadedFile = latestFile;
+                    lastLoadedWriteTimeUtc = latestWriteTimeUtc;
                 }
             }
 
@@ -106,12 +107,12 @@ public sealed class PhoneDrawingReceiver : MonoBehaviour
 
     private string FindLatestImage()
     {
-        if (string.IsNullOrWhiteSpace(resolvedUploadsFolder))
+        if (string.IsNullOrWhiteSpace(resolvedProcessedFolder))
         {
-            ResolveUploadsFolder();
+            ResolveProcessedFolder();
         }
 
-        if (!Directory.Exists(resolvedUploadsFolder))
+        if (!Directory.Exists(resolvedProcessedFolder))
         {
             return null;
         }
@@ -119,14 +120,13 @@ public sealed class PhoneDrawingReceiver : MonoBehaviour
         try
         {
             return Directory
-                .EnumerateFiles(resolvedUploadsFolder)
-                .Where(IsSupportedImage)
+                .EnumerateFiles(resolvedProcessedFolder, "fish_*.png")
                 .OrderByDescending(File.GetLastWriteTimeUtc)
                 .FirstOrDefault();
         }
         catch (Exception error)
         {
-            Debug.LogWarning($"[PhoneDrawingReceiver] Impossibile leggere la cartella Uploads: {error.Message}", this);
+            Debug.LogWarning($"[PhoneDrawingReceiver] Impossibile leggere la cartella Processed: {error.Message}", this);
             return null;
         }
     }
@@ -170,7 +170,7 @@ public sealed class PhoneDrawingReceiver : MonoBehaviour
             runtimeSprite = newSprite;
             targetRenderer.sprite = runtimeSprite;
 
-            Debug.Log($"[PhoneDrawingReceiver] Fotografia caricata: {Path.GetFileName(filePath)}", this);
+            Debug.Log($"[PhoneDrawingReceiver] Pesce caricato: {Path.GetFileName(filePath)}", this);
             return true;
         }
         catch (IOException)
@@ -186,10 +186,21 @@ public sealed class PhoneDrawingReceiver : MonoBehaviour
         }
     }
 
-    private static bool IsSupportedImage(string filePath)
+    private static DateTime GetLastWriteTimeUtc(string filePath)
     {
-        string extension = Path.GetExtension(filePath);
-        return SupportedExtensions.Contains(extension, StringComparer.OrdinalIgnoreCase);
+        if (string.IsNullOrEmpty(filePath))
+        {
+            return DateTime.MinValue;
+        }
+
+        try
+        {
+            return File.GetLastWriteTimeUtc(filePath);
+        }
+        catch
+        {
+            return DateTime.MinValue;
+        }
     }
 
     private void DestroyRuntimeAssets()

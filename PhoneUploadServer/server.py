@@ -8,12 +8,15 @@ from PIL import Image, ImageOps
 import qrcode
 from waitress import serve
 
+from SheetRectifier import process_photo
+
 
 app = Flask(__name__)
 
 BASE_FOLDER = Path(__file__).resolve().parent
 UPLOAD_FOLDER = BASE_FOLDER / "Uploads"
 UPLOAD_FOLDER.mkdir(exist_ok=True)
+PROCESSED_FOLDER = BASE_FOLDER / "Processed"
 
 # Limite massimo per ogni fotografia: 25 MB.
 app.config["MAX_CONTENT_LENGTH"] = 25 * 1024 * 1024
@@ -94,7 +97,7 @@ PAGE = """
 
 <body>
     <div class="panel">
-        <h1>Prototipo Sketch Aquarium</h1>
+        <h1>Prototipo</h1>
         <p>Fotografa il disegno e invialo al computer.</p>
 
         <form method="POST" enctype="multipart/form-data">
@@ -141,12 +144,22 @@ def upload_photo():
                 destination = UPLOAD_FOLDER / file_name
 
                 image.save(destination, format="JPEG", quality=95)
-                message = "Disegno inviato correttamente!"
-
                 print(f"Fotografia ricevuta: {destination}")
 
+                rectified_path, fish_path = process_photo(
+                    destination,
+                    PROCESSED_FOLDER,
+                )
+
+                message = "Disegno inviato ed elaborato correttamente!"
+                print(f"Foglio raddrizzato: {rectified_path}")
+                print(f"Pesce PNG trasparente: {fish_path}")
+
             except Exception as error:
-                message = "Errore durante il caricamento della fotografia."
+                message = (
+                    "Foto ricevuta, ma non riesco a riconoscere correttamente "
+                    "i quattro marcatori. Fotografa l'intero foglio e riprova."
+                )
                 is_error = True
                 print(f"Errore: {error}")
 
