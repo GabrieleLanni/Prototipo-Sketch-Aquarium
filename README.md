@@ -13,6 +13,12 @@ writes a transparent PNG that Unity displays in the scene.
 - Git LFS if the repository is cloned with Git and you want the tracked sample
   images restored
 
+  Run
+  ```bash
+  python -m pip install -r requirements.txt
+  ```
+  to install all the requirements in python
+
 ## Open the Unity project
 
 1. Install Unity `6000.3.18f1` through Unity Hub. Include the platform module
